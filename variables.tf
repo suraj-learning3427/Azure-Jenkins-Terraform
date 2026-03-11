@@ -2,7 +2,7 @@
 
 variable "name_prefix" {
   type        = string
-  default     = "vijay-"
+  default     = "azure-jenkins-"
   description = "Prefix for all resource names"
 }
 
@@ -104,7 +104,7 @@ variable "enable_firezone_multi_region" {
 variable "tags" {
   type        = map(string)
   default     = {
-    Environment = "demo"
+    Environment = "production"
     Project     = "jenkins"
     ManagedBy   = "terraform"
   }

@@ -2,7 +2,7 @@
 # Copy this file to terraform.tfvars and customize the values
 
 # Basic Configuration
-name_prefix = "vijay-"
+name_prefix = "azure-jenkins-"
 location    = "East US"
 
 # Network Configuration
@@ -24,8 +24,8 @@ ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... your-public-key-here
 
 # Tags
 tags = {
-  Environment = "demo"
+  Environment = "production"
   Project     = "jenkins"
-  Owner       = "vijay"
+  Owner       = "infrastructure-team"
   ManagedBy   = "terraform"
 }

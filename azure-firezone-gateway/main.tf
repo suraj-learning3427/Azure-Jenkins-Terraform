@@ -38,7 +38,7 @@ resource "azurerm_network_interface" "firezone_nic" {
   name                = "${var.name_prefix}firezone-gateway-nic"
   location            = data.azurerm_resource_group.gateway_rg.location
   resource_group_name = var.resource_group_name
-  enable_ip_forwarding = true
+  ip_forwarding_enabled = true
   tags                = var.tags
 
   ip_configuration {

@@ -1,12 +1,31 @@
 # Outputs for Multi-Region Firezone Gateway Deployment
 
-output "load_balancer" {
-  description = "Firezone load balancer information"
+output "load_balancer_primary" {
+  description = "Primary region Firezone load balancer information"
   value = {
-    id                = azurerm_lb.firezone_lb.id
-    name              = azurerm_lb.firezone_lb.name
-    public_ip_address = azurerm_public_ip.firezone_lb_pip.ip_address
-    fqdn              = azurerm_public_ip.firezone_lb_pip.fqdn
+    id                = azurerm_lb.firezone_lb_primary.id
+    name              = azurerm_lb.firezone_lb_primary.name
+    public_ip_address = azurerm_public_ip.firezone_lb_pip_primary.ip_address
+    fqdn              = azurerm_public_ip.firezone_lb_pip_primary.fqdn
+  }
+}
+
+output "load_balancer_secondary" {
+  description = "Secondary region Firezone load balancer information"
+  value = {
+    id                = azurerm_lb.firezone_lb_secondary.id
+    name              = azurerm_lb.firezone_lb_secondary.name
+    public_ip_address = azurerm_public_ip.firezone_lb_pip_secondary.ip_address
+    fqdn              = azurerm_public_ip.firezone_lb_pip_secondary.fqdn
+  }
+}
+
+output "traffic_manager" {
+  description = "Traffic Manager profile information"
+  value = {
+    id   = azurerm_traffic_manager_profile.firezone_tm.id
+    name = azurerm_traffic_manager_profile.firezone_tm.name
+    fqdn = azurerm_traffic_manager_profile.firezone_tm.fqdn
   }
 }
 
@@ -35,10 +54,14 @@ output "firezone_secondary" {
 output "firezone_access_info" {
   description = "Firezone access information"
   value = {
-    wireguard_endpoint    = "${azurerm_public_ip.firezone_lb_pip.ip_address}:51820"
-    health_check_url      = "http://${azurerm_public_ip.firezone_lb_pip.ip_address}:8080"
-    primary_gateway_ip    = module.firezone_primary.firezone_gateway.private_ip_address
-    secondary_gateway_ip  = module.firezone_secondary.firezone_gateway.private_ip_address
-    load_balancer_ip      = azurerm_public_ip.firezone_lb_pip.ip_address
+    traffic_manager_fqdn       = azurerm_traffic_manager_profile.firezone_tm.fqdn
+    primary_wireguard_endpoint = "${azurerm_public_ip.firezone_lb_pip_primary.ip_address}:51820"
+    secondary_wireguard_endpoint = "${azurerm_public_ip.firezone_lb_pip_secondary.ip_address}:51820"
+    primary_health_check_url   = "http://${azurerm_public_ip.firezone_lb_pip_primary.ip_address}:8080"
+    secondary_health_check_url = "http://${azurerm_public_ip.firezone_lb_pip_secondary.ip_address}:8080"
+    primary_gateway_ip         = module.firezone_primary.firezone_gateway.private_ip_address
+    secondary_gateway_ip       = module.firezone_secondary.firezone_gateway.private_ip_address
+    primary_lb_ip              = azurerm_public_ip.firezone_lb_pip_primary.ip_address
+    secondary_lb_ip            = azurerm_public_ip.firezone_lb_pip_secondary.ip_address
   }
 }

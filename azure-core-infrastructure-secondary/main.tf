@@ -26,6 +26,7 @@ resource "azurerm_virtual_network" "vpc_spoke_secondary" {
   address_space       = [var.spoke_address_space]
   location            = azurerm_resource_group.core_infrastructure_secondary.location
   resource_group_name = azurerm_resource_group.core_infrastructure_secondary.name
+  dns_servers         = ["168.63.129.16"]
   tags                = var.tags
 }
 
@@ -65,7 +66,7 @@ resource "azurerm_network_security_group" "jenkins_nsg_secondary" {
     destination_address_prefix = "*"
   }
 
-  # Allow Jenkins port
+  # Allow Jenkins port from Firezone VPN clients only
   security_rule {
     name                       = "AllowJenkins"
     priority                   = 1100
@@ -74,7 +75,7 @@ resource "azurerm_network_security_group" "jenkins_nsg_secondary" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = var.jenkins_port
-    source_address_prefix      = "*"
+    source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "*"
   }
 

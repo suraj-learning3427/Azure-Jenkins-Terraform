@@ -83,10 +83,22 @@ variable "secondary_vpn_subnet_cidr" {
   description = "CIDR block for VPN subnet in secondary region"
 }
 
+variable "secondary_jenkins_subnet_cidr" {
+  type        = string
+  default     = "10.168.0.0/24"
+  description = "CIDR block for Jenkins subnet in secondary region"
+}
+
 variable "jenkins_fqdn" {
   type        = string
   default     = "jenkins.learningmyway.space"
   description = "FQDN for Jenkins"
+}
+
+variable "firezone_id" {
+  type        = string
+  description = "Firezone gateway ID"
+  sensitive   = true
 }
 
 variable "firezone_token" {
@@ -99,6 +111,18 @@ variable "enable_firezone_multi_region" {
   type        = bool
   default     = true
   description = "Whether to enable multi-region Firezone deployment with load balancer"
+}
+
+variable "dns_zone_name" {
+  type        = string
+  default     = "internal.company"
+  description = "Private DNS zone name for Jenkins internal resolution"
+}
+
+variable "firezone_client_cidr" {
+  type        = string
+  default     = "100.64.0.0/10"
+  description = "CIDR range assigned to Firezone VPN clients"
 }
 
 variable "tags" {

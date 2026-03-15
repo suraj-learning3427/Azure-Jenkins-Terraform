@@ -1,31 +1,36 @@
-# Azure Jenkins Infrastructure - Example Configuration
-# Copy this file to terraform.tfvars and customize the values
+# Azure Jenkins Infrastructure — Variable Reference
+# These variables must be set in Terraform Cloud workspace (NOT committed to git)
+# Go to: TFC → Workspace → Variables → Add variable
 
-# Basic Configuration
-name_prefix = "azure-jenkins-"
-location    = "East US"
+# ── Azure credentials (mark as sensitive in TFC) ──────────────────────────────
+# Set these as ENVIRONMENT variables in TFC:
+#   ARM_CLIENT_ID       = "your-service-principal-app-id"
+#   ARM_CLIENT_SECRET   = "your-service-principal-secret"
+#   ARM_SUBSCRIPTION_ID = "your-azure-subscription-id"
+#   ARM_TENANT_ID       = "your-azure-tenant-id"
 
-# Network Configuration
-hub_address_space   = "172.16.0.0/16"
-spoke_address_space = "192.168.0.0/16"
+# ── Terraform variables (set as Terraform variables in TFC) ───────────────────
+name_prefix      = "azure-jenkins-"
+location         = "East US"
+secondary_region = "West US"
 
-# Features
-enable_bastion     = false
-enable_vpn_gateway = false
-enable_hub_peering = true
+hub_address_space             = "172.16.0.0/16"
+spoke_address_space           = "192.168.0.0/16"
+secondary_spoke_address_space = "192.169.0.0/16"
+vpn_subnet_cidr               = "192.168.3.0/24"
+secondary_vpn_subnet_cidr     = "192.169.3.0/24"
+secondary_jenkins_subnet_cidr = "192.169.0.0/24"
 
-# Jenkins Configuration
-jenkins_vm_size   = "Standard_D2s_v3"
-jenkins_static_ip = "192.168.129.50"
-jenkins_fqdn      = "jenkins.learningmyway.space"
+enable_bastion               = false
+enable_vpn_gateway           = false
+enable_hub_peering           = true
+enable_firezone_multi_region = true
 
-# SSH Key - Replace with your actual public key
-ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... your-public-key-here"
+jenkins_vm_size      = "Standard_D2s_v3"
+dns_zone_name        = "internal.company"
+firezone_client_cidr = "100.64.0.0/10"
 
-# Tags
-tags = {
-  Environment = "production"
-  Project     = "jenkins"
-  Owner       = "infrastructure-team"
-  ManagedBy   = "terraform"
-}
+# ── Sensitive variables (mark sensitive = true in TFC) ────────────────────────
+ssh_public_key = "ssh-rsa AAAA..."   # your public key
+firezone_id    = "41fc760c-..."      # from Firezone UI
+firezone_token = ".SFMyNTY..."       # from Firezone UI — include leading dot

@@ -1,0 +1,31 @@
+# GCP Jenkins Infrastructure - Example Variables
+# Copy to terraform.tfvars and fill in your values
+
+project_id   = "your-gcp-project-id"
+region       = "us-central1"
+name_prefix  = "jenkins-"
+
+# Network
+jenkins_subnet_cidr  = "10.10.0.0/24"
+vpn_subnet_cidr      = "10.10.1.0/24"
+firezone_client_cidr = "100.64.0.0/10"
+dns_domain           = "internal.company"
+
+# VM sizes
+firezone_machine_type     = "e2-medium"
+jenkins_machine_type      = "e2-standard-2"
+jenkins_data_disk_size_gb = 50
+jenkins_port              = 8080
+
+# SSH key (same key as Azure or a new one)
+ssh_public_key = "ssh-rsa AAAA..."
+
+# Firezone (same site as Azure — gateways register to same Firezone account)
+firezone_id    = "41fc760c-918a-44e6-bf05-6ffd7087d618"
+firezone_token = ".SFMyNTY..."
+
+labels = {
+  environment = "production"
+  project     = "jenkins"
+  managed_by  = "terraform"
+}

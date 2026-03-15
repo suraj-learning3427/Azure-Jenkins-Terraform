@@ -75,6 +75,12 @@ variable "ssh_public_key" {
 }
 
 # Firezone Configuration
+variable "firezone_id" {
+  type        = string
+  description = "Firezone gateway ID"
+  sensitive   = true
+}
+
 variable "firezone_token" {
   type        = string
   description = "Firezone portal token for gateway authentication"

@@ -1,64 +1,37 @@
 #!/bin/bash
-# Firezone Gateway Installation Script for Azure VM
-# Based on official Firezone gateway installation
-
+# Firezone Gateway Installation Script for GCP VM
 set -e
 
-# Log all output
 exec > >(tee -a /var/log/firezone-startup.log)
 exec 2>&1
 
 echo "Starting Firezone Gateway setup..."
 echo "Timestamp: $(date)"
 
-# Variables from Terraform
 FIREZONE_TOKEN="${firezone_token}"
 FIREZONE_ID="${firezone_id}"
 LOG_LEVEL="${log_level}"
 
-# Update system packages
-echo "Updating system packages..."
+# Update system
 apt-get update -y
 apt-get upgrade -y
-
-# Install required packages
-echo "Installing required packages..."
-apt-get install -y \
-    curl \
-    wget \
-    gnupg \
-    lsb-release \
-    ca-certificates \
-    software-properties-common \
-    iptables
+apt-get install -y curl wget gnupg lsb-release ca-certificates software-properties-common iptables
 
 # Enable IP forwarding
-echo "Enabling IP forwarding..."
 echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
 echo 'net.ipv6.conf.all.forwarding = 1' >> /etc/sysctl.conf
 sysctl -p
 
 # Install Docker
-echo "Installing Docker..."
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
 apt-get update -y
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# Start and enable Docker
 systemctl enable docker
 systemctl start docker
 
-# Add user to docker group
-usermod -aG docker azureuser
-
-# Create Firezone directory
-echo "Setting up Firezone..."
-mkdir -p /opt/firezone
-cd /opt/firezone
-
-# Run Firezone gateway using official Docker command
+# Run Firezone gateway
 echo "Starting Firezone gateway container..."
 GATEWAY_NAME=$(hostname)
 docker run -d \
@@ -79,46 +52,10 @@ docker run -d \
   --env RUST_LOG=$LOG_LEVEL \
   ghcr.io/firezone/gateway:1
 
-# Configure firewall (UFW)
-echo "Configuring firewall..."
-ufw --force enable
-ufw allow ssh
-ufw allow 51820/udp  # WireGuard port
-ufw allow 80/tcp     # HTTP for health checks
-ufw allow 443/tcp    # HTTPS
-
-# Wait for Firezone to start
-echo "Waiting for Firezone gateway to start..."
-sleep 30
-
-# Check Firezone status
-echo "Checking Firezone gateway status..."
-if docker ps | grep -q "firezone-gateway"; then
-    echo "Firezone gateway started successfully"
-    docker logs firezone-gateway --tail 20
-else
-    echo "Warning: Firezone gateway may not have started properly"
-    docker logs firezone-gateway
-fi
-
-# Create health check endpoint
-echo "Setting up health check endpoint..."
-cat > /opt/firezone/health-check.sh <<EOF
-#!/bin/bash
-# Simple health check for load balancer
-if docker ps | grep -q "firezone-gateway.*Up"; then
-    echo "OK"
-    exit 0
-else
-    echo "ERROR"
-    exit 1
-fi
-EOF
-
-chmod +x /opt/firezone/health-check.sh
-
-# Install simple HTTP server for health checks
+# Health check HTTP server for load balancer
 apt-get install -y python3
+mkdir -p /opt/firezone
+
 cat > /etc/systemd/system/firezone-health.service <<EOF
 [Unit]
 Description=Firezone Health Check Server
@@ -126,7 +63,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=azureuser
+User=ubuntu
 WorkingDirectory=/opt/firezone
 ExecStart=/usr/bin/python3 -m http.server 8080
 Restart=always
@@ -138,7 +75,5 @@ EOF
 systemctl enable firezone-health.service
 systemctl start firezone-health.service
 
-echo "Firezone Gateway setup completed successfully!"
-echo "Gateway should be accessible on port 51820 (WireGuard)"
-echo "Health check available on port 8080"
+echo "Firezone Gateway setup completed!"
 echo "Logs: /var/log/firezone-startup.log"

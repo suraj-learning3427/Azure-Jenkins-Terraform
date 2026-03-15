@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Multi-Cloud Jenkins Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#080c14; color:#fff; font-family:'Inter',sans-serif; min-height:100vh; }
+
+  .header { text-align:center; padding:28px 20px 10px;
+    background:linear-gradient(180deg,#0d1526 0%,transparent 100%); }
+  .header h1 { font-size:1.5em; font-weight:700; letter-spacing:1px;
+    background:linear-gradient(90deg,#61dafb,#a78bfa,#34d399);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .header p { color:#64748b; font-size:.85em; margin-top:6px; }
+
+  #tabs { display:flex; justify-content:center; gap:8px; padding:16px; flex-wrap:wrap; }
+  .tab { padding:9px 22px; border-radius:24px; cursor:pointer; border:1px solid #1e293b;
+    background:#0f172a; color:#64748b; font-size:.85em; font-weight:600;
+    transition:all .25s; display:flex; align-items:center; gap:6px; }
+  .tab:hover { border-color:#334155; color:#94a3b8; }
+  .tab.active { background:linear-gradient(135deg,#1d4ed8,#7c3aed);
+    color:#fff; border-color:transparent; box-shadow:0 0 20px rgba(99,102,241,.4); }
+
+  #canvas-wrap { display:flex; justify-content:center; padding:0 16px 30px; overflow-x:auto; }
+  svg { border-radius:16px; background:#0b1120;
+    box-shadow:0 0 60px rgba(0,0,0,.6), inset 0 0 80px rgba(99,102,241,.03); }
+
+  .tooltip {
+    position:fixed; background:rgba(15,23,42,.97); border:1px solid #334155;
+    border-radius:10px; padding:12px 16px; font-size:.78em; pointer-events:none;
+    opacity:0; transition:opacity .15s; max-width:280px; z-index:99;
+    box-shadow:0 8px 32px rgba(0,0,0,.5); line-height:1.6; color:#cbd5e1;
+  }
+  .tooltip strong { color:#61dafb; display:block; margin-bottom:4px; font-size:.9em; }
+
+  .legend { display:flex; justify-content:center; gap:20px; padding:0 0 20px;
+    flex-wrap:wrap; font-size:.75em; color:#64748b; }
+  .legend-item { display:flex; align-items:center; gap:6px; }
+  .legend-dot { width:10px; height:10px; border-radius:50%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🌐 Multi-Cloud VPN-Protected SSO Jenkins Platform</h1>
+  <p>Azure + GCP · Firezone WireGuard VPN · Microsoft Entra ID SSO · Terraform Cloud CI/CD</p>
+</div>
+
+<div id="tabs">
+  <div class="tab active" onclick="showTab('infra')">🏗 Infrastructure</div>
+  <div class="tab" onclick="showTab('cicd')">🔄 CI/CD Pipeline</div>
+  <div class="tab" onclick="showTab('sso')">🔐 SSO &amp; Identity</div>
+  <div class="tab" onclick="showTab('vpn')">🛡 VPN Flow</div>
+</div>
+
+<div id="canvas-wrap">
+  <svg id="diagram" width="1200" height="720" viewBox="0 0 1200 720"></svg>
+</div>
+
+<div class="legend" id="legend"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const svg = document.getElementById('diagram');
+const tooltip = document.getElementById('tooltip');
+const NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(attrs||{})) e.setAttribute(k,v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function tip(g, title, lines) {
+  g.style.cursor = 'pointer';
+  g.addEventListener('mousemove', e => {
+    tooltip.style.opacity = 1;
+    tooltip.style.left = (e.clientX+14)+'px';
+    tooltip.style.top = (e.clientY+14)+'px';
+    tooltip.innerHTML = `<strong>${title}</strong>${lines.join('<br>')}`;
+  });
+  g.addEventListener('mouseleave', () => tooltip.style.opacity = 0);
+}
+
+function defsSVG() {
+  const d = el('defs');
+
+  // Arrow markers
+  [['arr','#61dafb'],['arrO','#f59e0b'],['arrG','#34d399'],['arrP','#a78bfa'],['arrR','#f87171']].forEach(([id,col])=>{
+    const m = el('marker',{id,markerWidth:8,markerHeight:8,refX:7,refY:3,orient:'auto'});
+    m.appendChild(el('path',{d:'M0,0 L0,6 L8,3 z',fill:col}));
+    d.appendChild(m);
+  });
+
+  // Gradients
+  const grads = [
+    {id:'gAzure',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#0d1b3e',c2:'#0a1628'},
+    {id:'gGCP',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#0d2e1a',c2:'#0a1e12'},
+    {id:'gFZ',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#1e3a5f',c2:'#0f2040'},
+    {id:'gJenkins',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#1e1b4b',c2:'#13103a'},
+    {id:'gIdP',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#2d1b4e',c2:'#1a0f30'},
+    {id:'gTFC',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#2d1b4e',c2:'#1a0f30'},
+    {id:'gGH',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#1a1f2e',c2:'#0f1420'},
+    {id:'gDev',x1:'0%',y1:'0%',x2:'100%',y2:'100%',c1:'#1e293b',c2:'#0f172a'},
+  ];
+  grads.forEach(g => {
+    const lg = el('linearGradient',{id:g.id,x1:g.x1,y1:g.y1,x2:g.x2,y2:g.y2});
+    lg.appendChild(el('stop',{'offset':'0%','stop-color':g.c1}));
+    lg.appendChild(el('stop',{'offset':'100%','stop-color':g.c2}));
+    d.appendChild(lg);
+  });
+
+  // Glow filter
+  const f = el('filter',{id:'glow',x:'-20%',y:'-20%',width:'140%',height:'140%'});
+  const fe = el('feGaussianBlur',{stdDeviation:'3',result:'blur'});
+  const fm = el('feMerge');
+  fm.appendChild(el('feMergeNode',{in:'blur'}));
+  fm.appendChild(el('feMergeNode',{in:'SourceGraphic'}));
+  f.appendChild(fe); f.appendChild(fm); d.appendChild(f);
+
+  // Pulse animation
+  const style = el('style');
+  style.textContent = `
+    @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+    @keyframes flow { 0%{stroke-dashoffset:20} 100%{stroke-dashoffset:0} }
+    @keyframes flowR { 0%{stroke-dashoffset:0} 100%{stroke-dashoffset:20} }
+    .pulse { animation: pulse 2s infinite; }
+    .flow-line { stroke-dasharray:6,4; animation: flow .8s linear infinite; }
+    .flow-line-r { stroke-dasharray:6,4; animation: flowR .8s linear infinite; }
+    .glow-box:hover rect { filter:brightness(1.3); }
+  `;
+  d.appendChild(style);
+  svg.appendChild(d);
+}
+
+function card(x,y,w,h,grad,stroke,icon,title,sub,tipTitle,tipLines,pulse) {
+  const g = el('g',{class:'glow-box'});
+  const r = el('rect',{x,y,width:w,height:h,rx:10,fill:`url(#${grad})`,stroke,
+    'stroke-width':1.5, filter: pulse?'url(#glow)':''});
+  if(pulse) r.classList.add('pulse');
+  g.appendChild(r);
+
+  // Icon circle
+  const ic = el('circle',{cx:x+22,cy:y+h/2,r:14,fill:stroke+'22',stroke,
+    'stroke-width':1,'stroke-opacity':.5});
+  g.appendChild(ic);
+  const it = el('text',{x:x+22,y:y+h/2,'text-anchor':'middle','dominant-baseline':'middle','font-size':13});
+  it.textContent = icon; g.appendChild(it);
+
+  const t1 = el('text',{x:x+42,y:y+h/2-(sub?8:0),'dominant-baseline':'middle',
+    fill:'#e2e8f0','font-size':12,'font-weight':'600'});
+  t1.textContent = title; g.appendChild(t1);
+
+  if(sub) {
+    const t2 = el('text',{x:x+42,y:y+h/2+10,'dominant-baseline':'middle',
+      fill:'#64748b','font-size':10});
+    t2.textContent = sub; g.appendChild(t2);
+  }
+  if(tipTitle) tip(g, tipTitle, tipLines||[]);
+  return g;
+}
+
+function cloudBox(x,y,w,h,color,label) {
+  const g = el('g');
+  g.appendChild(el('rect',{x,y,width:w,height:h,rx:14,fill:color+'08',
+    stroke:color,'stroke-width':1.5,'stroke-dasharray':'8,4'}));
+  const bg = el('rect',{x:x+10,y:y-10,width:label.length*8+16,height:20,rx:6,fill:color+'22'});
+  g.appendChild(bg);
+  const t = el('text',{x:x+18,y:y+4,'font-size':11,'font-weight':'700',fill:color});
+  t.textContent = label; g.appendChild(t);
+  return g;
+}
+
+function line(x1,y1,x2,y2,color,marker,animated,label) {
+  const g = el('g');
+  const l = el('line',{x1,y1,x2,y2,stroke:color,'stroke-width':1.8,
+    'marker-end':`url(#${marker||'arr'})`});
+  if(animated) l.classList.add('flow-line');
+  g.appendChild(l);
+  if(label) {
+    const bg = el('rect',{x:(x1+x2)/2-label.length*3-2,y:(y1+y2)/2-9,
+      width:label.length*6+4,height:14,rx:4,fill:'#0b1120'});
+    g.appendChild(bg);
+    const t = el('text',{x:(x1+x2)/2,y:(y1+y2)/2+1,'text-anchor':'middle',
+      'dominant-baseline':'middle',fill:color,'font-size':9,'font-weight':'600'});
+    t.textContent = label; g.appendChild(t);
+  }
+  return g;
+}
+
+function curve(d,color,marker,animated) {
+  const p = el('path',{d,stroke:color,'stroke-width':1.8,fill:'none',
+    'marker-end':`url(#${marker||'arr'})`});
+  if(animated) p.classList.add('flow-line');
+  return p;
+}
+
+function txt(x,y,text,color,size,weight,anchor) {
+  const t = el('text',{x,y,'text-anchor':anchor||'middle','dominant-baseline':'middle',
+    fill:color||'#94a3b8','font-size':size||11,'font-weight':weight||'400'});
+  t.textContent = text; return t;
+}
+
+function badge(x,y,text,color) {
+  const g = el('g');
+  g.appendChild(el('rect',{x,y,width:text.length*6+10,height:16,rx:8,fill:color+'33',stroke:color,'stroke-width':.8}));
+  g.appendChild(txt(x+text.length*3+5,y+8,text,color,9,'600'));
+  return g;
+}
+
+function clearSVG() {
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  defsSVG();
+}
+
+// ─── INFRASTRUCTURE TAB ───────────────────────────────────────────────────────
+function drawInfra() {
+  document.getElementById('legend').innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Azure Resources</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>GCP Resources</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div>Identity / DNS</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Load Balancer / NAT</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Security Rules</div>
+  `;
+
+  // Cloud containers
+  svg.appendChild(cloudBox(20,50,540,620,'#3b82f6','☁  AZURE  |  VNet: 192.168.0.0/16'));
+  svg.appendChild(cloudBox(640,50,540,620,'#34d399','☁  GOOGLE CLOUD  |  VPC: 10.0.0.0/16'));
+
+  // ── AZURE ──
+  // VPN Subnet
+  svg.appendChild(el('rect',{x:40,y:100,width:240,height:200,rx:8,fill:'#3b82f608',stroke:'#3b82f6','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(160,118,'subnet-vpn · 192.168.3.0/24','#60a5fa',9,'600'));
+
+  svg.appendChild(svg.appendChild(card(55,130,210,70,'gFZ','#3b82f6','�','Firezone Gateway','Standard_B2s · Public IP · :51820',
+    'Azure Firezone Gateway',['• Public IP for WireGuard','• Port 51820/UDP','• Docker + Firezone Agent','• Connects to api.firezone.dev'],true)));
+
+  svg.appendChild(card(55,215,210,60,'gFZ','#60a5fa','⚖','Load Balancer','Standard SKU · Public IP',
+    'Azure Load Balancer',['• Standard SKU','• Frontend: Public IP','• Backend: Firezone NIC','• Health probe: 8080/TCP']));
+
+  // Jenkins Subnet
+  svg.appendChild(el('rect',{x:40,y:320,width:240,height:180,rx:8,fill:'#a78bfa08',stroke:'#a78bfa','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(160,338,'subnet-jenkins · 192.168.0.0/24','#a78bfa',9,'600'));
+
+  svg.appendChild(card(55,350,210,70,'gJenkins','#a78bfa','⚙','Jenkins VM','Standard_D2s · NO Public IP',
+    'Azure Jenkins VM',['• No public IP — VPN only','• Port 8080 (Jenkins UI)','• SAML SSO via Entra ID','• Private subnet only'],true));
+
+  svg.appendChild(card(55,435,210,50,'gJenkins','#c4b5fd','🌐','Private DNS','jenkins-az.internal.company',
+    'Azure Private DNS',['• Zone: learningmyway.space','• A record → Jenkins private IP','• Linked to VNet']));
+
+  // NSG
+  svg.appendChild(el('rect',{x:300,y:100,width:240,height:200,rx:8,fill:'#f8717108',stroke:'#f87171','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(420,118,'NSG Rules','#f87171',9,'600'));
+  [['✅ 51820/UDP','WireGuard (inbound)','#34d399'],
+   ['✅ 22/TCP','SSH management','#34d399'],
+   ['✅ 8080/TCP','VPN subnet only','#f59e0b'],
+   ['❌ 8080/TCP','Internet blocked','#f87171'],
+   ['✅ 443/TCP','HTTPS outbound','#34d399']].forEach(([rule,desc,col],i)=>{
+    svg.appendChild(el('rect',{x:310,y:130+i*32,width:220,height:26,rx:6,fill:col+'15',stroke:col,'stroke-width':.6}));
+    svg.appendChild(txt(320,143+i*32,rule,col,10,'600','start'));
+    svg.appendChild(txt(430,143+i*32,desc,'#94a3b8',9,'400','start'));
+  });
+
+  // Azure Traffic Manager
+  svg.appendChild(card(300,320,240,60,'gFZ','#f59e0b','🌍','Traffic Manager','Performance routing · Global',
+    'Azure Traffic Manager',['• Performance routing method','• Primary: East US endpoint','• Secondary: West US endpoint','• DNS TTL: 30s']));
+
+  svg.appendChild(card(300,400,240,60,'gFZ','#f59e0b','📊','Monitoring','Azure Monitor · Log Analytics',
+    'Azure Monitoring',['• VM metrics & alerts','• NSG flow logs','• Firezone container logs','• Jenkins health checks']));
+
+  // ── GCP ──
+  svg.appendChild(el('rect',{x:660,y:100,width:240,height:200,rx:8,fill:'#34d39908',stroke:'#34d399','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(780,118,'subnet-vpn · 10.0.3.0/24','#6ee7b7',9,'600'));
+
+  svg.appendChild(card(675,130,210,70,'gFZ','#34d399','🔒','Firezone Gateway','e2-medium · Public IP · :51820',
+    'GCP Firezone Gateway',['• Public IP for WireGuard','• Port 51820/UDP','• Docker + Firezone Agent','• Connects to api.firezone.dev'],true));
+
+  svg.appendChild(card(675,215,210,60,'gFZ','#6ee7b7','🌍','Cloud NAT','Static egress IP · Outbound',
+    'GCP Cloud NAT',['• Static public IP for egress','• Private VMs use this for internet','• Jenkins package downloads','• Firezone outbound traffic']));
+
+  svg.appendChild(el('rect',{x:660,y:320,width:240,height:180,rx:8,fill:'#a78bfa08',stroke:'#a78bfa','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(780,338,'subnet-jenkins · 10.0.0.0/24','#a78bfa',9,'600'));
+
+  svg.appendChild(card(675,350,210,70,'gJenkins','#a78bfa','⚙','Jenkins VM','e2-standard-2 · NO Public IP',
+    'GCP Jenkins VM',['• No public IP — VPN only','• Port 8080 (Jenkins UI)','• SAML SSO via Entra ID','• Private subnet only'],true));
+
+  svg.appendChild(card(675,435,210,50,'gJenkins','#c4b5fd','🌐','Cloud DNS','jenkins-gcp.internal.company',
+    'GCP Cloud DNS',['• Private zone: internal.company','• A record → Jenkins private IP','• Linked to VPC']));
+
+  // GCP Firewall
+  svg.appendChild(el('rect',{x:920,y:100,width:240,height:200,rx:8,fill:'#f8717108',stroke:'#f87171','stroke-width':.8,'stroke-dasharray':'4,3'}));
+  svg.appendChild(txt(1040,118,'VPC Firewall Rules','#f87171',9,'600'));
+  [['✅ 51820/UDP','WireGuard (inbound)','#34d399'],
+   ['✅ 22/TCP','SSH (IAP tunnel)','#34d399'],
+   ['✅ 8080/TCP','VPN subnet only','#f59e0b'],
+   ['❌ 8080/TCP','Internet blocked','#f87171'],
+   ['✅ 443/TCP','HTTPS outbound','#34d399']].forEach(([rule,desc,col],i)=>{
+    svg.appendChild(el('rect',{x:930,y:130+i*32,width:220,height:26,rx:6,fill:col+'15',stroke:col,'stroke-width':.6}));
+    svg.appendChild(txt(940,143+i*32,rule,col,10,'600','start'));
+    svg.appendChild(txt(1050,143+i*32,desc,'#94a3b8',9,'400','start'));
+  });
+
+  svg.appendChild(card(920,320,240,60,'gFZ','#f59e0b','🔗','Cloud Interconnect','VPC Peering · Private access',
+    'GCP Connectivity',['• VPC peering for multi-region','• Private Google Access enabled','• Cloud Armor (optional WAF)']));
+
+  svg.appendChild(card(920,400,240,60,'gFZ','#f59e0b','📊','Cloud Monitoring','Stackdriver · Logging',
+    'GCP Monitoring',['• VM metrics & uptime checks','• VPC flow logs','• Firezone container logs','• Jenkins health checks']));
+
+  // Identity bar
+  svg.appendChild(el('rect',{x:20,y:690,width:1160,height:24,rx:8,fill:'#a78bfa15',stroke:'#a78bfa','stroke-width':1}));
+  svg.appendChild(txt(600,702,'🔐  Microsoft Entra ID — Primary IdP · SAML 2.0 SSO for both Jenkins instances · Workload Identity Federation → GCP','#a78bfa',10,'600'));
+
+  // Arrows
+  svg.appendChild(line(160,200,160,320,'#3b82f6','arr',true,'VPN→Jenkins'));
+  svg.appendChild(line(160,420,160,435,'#a78bfa','arrP',false,'DNS'));
+  svg.appendChild(line(780,200,780,320,'#34d399','arrG',true,'VPN→Jenkins'));
+  svg.appendChild(line(780,420,780,435,'#a78bfa','arrP',false,'DNS'));
+
+  // Cross-cloud Firezone control plane
+  svg.appendChild(curve('M 265 165 Q 600 20 735 165','#f59e0b','arrO',true));
+  svg.appendChild(txt(600,28,'Firezone Control Plane · api.firezone.dev','#f59e0b',9,'600'));
+}
+</script>
+
+<script>
+// ─── CI/CD TAB ────────────────────────────────────────────────────────────────
+function drawCICD() {
+  document.getElementById('legend').innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:#61dafb"></div>Dev Workflow</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>GitHub</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div>Terraform Cloud</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Azure Deploy</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>GCP Deploy</div>
+  `;
+
+  // Left pipeline
+  const steps = [
+    {y:60,  icon:'💻',title:'VS Code',       sub:'Write Terraform HCL',  grad:'gDev',  col:'#61dafb'},
+    {y:160, icon:'🐙',title:'GitHub Push',   sub:'git push origin main', grad:'gGH',   col:'#f59e0b'},
+    {y:260, icon:'🔔',title:'Webhook',       sub:'Auto-triggered by push',grad:'gTFC', col:'#a78bfa'},
+    {y:360, icon:'📋',title:'terraform plan',sub:'Auto on every commit',  grad:'gTFC', col:'#a78bfa'},
+    {y:460, icon:'👁',title:'Manual Review', sub:'Approve in TF Cloud UI',grad:'gIdP', col:'#f87171'},
+    {y:560, icon:'🚀',title:'terraform apply',sub:'Runs on approval',    grad:'gFZ',   col:'#34d399'},
+  ];
+
+  steps.forEach((s,i) => {
+    // Step number
+    svg.appendChild(el('circle',{cx:55,cy:s.y+35,r:16,fill:s.col+'33',stroke:s.col,'stroke-width':1.5}));
+    svg.appendChild(txt(55,s.y+35,String(i+1),s.col,12,'700'));
+    svg.appendChild(card(80,s.y,260,70,s.grad,s.col,s.icon,s.title,s.sub,s.title,[]));
+    if(i<steps.length-1) {
+      svg.appendChild(line(210,s.y+70,210,steps[i+1].y,s.col,'arr',true));
+    }
+  });
+
+  // TF Cloud workspace panel
+  svg.appendChild(el('rect',{x:400,y:40,width:380,height:440,rx:14,fill:'#1a0f3022',stroke:'#a78bfa','stroke-width':1.5}));
+  svg.appendChild(txt(590,68,'☁ Terraform Cloud','#a78bfa',14,'700'));
+  svg.appendChild(txt(590,88,'Remote State · Plan/Apply · Secrets','#64748b',10));
+
+  // Workspaces
+  [['jenkins-azure','#3b82f6','ARM_CLIENT_ID · ARM_CLIENT_SECRET\nARM_TENANT_ID · firezone_token'],
+   ['jenkins-gcp','#34d399','GOOGLE_CREDENTIALS · firezone_token\nfirezone_id · project_id']].forEach(([name,col,vars],i) => {
+    const wy = 110+i*160;
+    svg.appendChild(el('rect',{x:420,y:wy,width:340,height:130,rx:10,fill:col+'10',stroke:col,'stroke-width':1.2}));
+    svg.appendChild(txt(590,wy+18,`Workspace: ${name}`,col,12,'700'));
+    svg.appendChild(el('rect',{x:435,y:wy+32,width:310,height:50,rx:6,fill:'#0b112088',stroke:'#1e293b','stroke-width':.8}));
+    svg.appendChild(txt(445,wy+48,'🔐 Sensitive Variables',col,9,'600','start'));
+    vars.split('\n').forEach((v,j) => svg.appendChild(txt(445,wy+62+j*12,v,'#94a3b8',9,'400','start')));
+    svg.appendChild(el('rect',{x:435,y:wy+90,width:310,height:30,rx:6,fill:'#0b112088',stroke:'#1e293b','stroke-width':.8}));
+    svg.appendChild(txt(445,wy+105,'📦 State: Stored in Terraform Cloud (no local tfstate)','#64748b',9,'400','start'));
+  });
+
+  // Variables detail
+  svg.appendChild(el('rect',{x:420,y:430,width:340,height:40,rx:8,fill:'#f59e0b15',stroke:'#f59e0b','stroke-width':.8}));
+  svg.appendChild(txt(590,450,'⚡ Auto Plan on PR · Manual Approval · Auto Apply','#f59e0b',10,'600'));
+
+  // GitHub repo panel
+  svg.appendChild(el('rect',{x:400,y:500,width:380,height:180,rx:14,fill:'#1a1f2e',stroke:'#f59e0b','stroke-width':1.5}));
+  svg.appendChild(txt(590,524,'🐙 GitHub Repository','#f59e0b',13,'700'));
+  const files = ['📁 azure/main.tf','📁 azure/variables.tf','📁 azure/modules/firezone-gateway/',
+                 '📁 gcp/main.tf','📁 gcp/variables.tf','📁 gcp/modules/firezone-gateway/'];
+  files.forEach((f,i) => {
+    const col = i<3?'#3b82f6':'#34d399';
+    svg.appendChild(el('rect',{x:420,y:535+i*22,width:340,height:18,rx:4,fill:col+'10'}));
+    svg.appendChild(txt(430,544+i*22,f,col,10,'400','start'));
+  });
+
+  // Deploy targets
+  svg.appendChild(el('rect',{x:840,y:40,width:340,height:200,rx:14,fill:'#0d1b2e',stroke:'#3b82f6','stroke-width':1.5}));
+  svg.appendChild(txt(1010,65,'☁ Azure','#3b82f6',14,'700'));
+  ['VNet + Subnets','Firezone Gateway VM','Jenkins Private VM','Azure Private DNS','Load Balancer','Traffic Manager'].forEach((r,i)=>{
+    svg.appendChild(txt(860,90+i*22,'✓ '+r,'#60a5fa',10,'400','start'));
+  });
+
+  svg.appendChild(el('rect',{x:840,y:260,width:340,height:200,rx:14,fill:'#0d2e1a',stroke:'#34d399','stroke-width':1.5}));
+  svg.appendChild(txt(1010,285,'☁ GCP','#34d399',14,'700'));
+  ['VPC + Subnets','Firezone Gateway VM','Jenkins Private VM','Cloud DNS Private Zone','Cloud NAT','VPC Firewall Rules'].forEach((r,i)=>{
+    svg.appendChild(txt(860,310+i*22,'✓ '+r,'#6ee7b7',10,'400','start'));
+  });
+
+  // Arrows from TF Cloud to deploy targets
+  svg.appendChild(line(780,175,840,140,'#3b82f6','arr',true,'apply'));
+  svg.appendChild(line(780,335,840,360,'#34d399','arrG',true,'apply'));
+  svg.appendChild(line(340,595,400,300,'#a78bfa','arrP',true,''));
+  svg.appendChild(line(340,245,400,200,'#f59e0b','arrO',true,'webhook'));
+}
+
+// ─── SSO TAB ──────────────────────────────────────────────────────────────────
+function drawSSO() {
+  document.getElementById('legend').innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div>Entra ID / SAML</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>GCP WIF</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#61dafb"></div>User Flow</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Token Exchange</div>
+  `;
+
+  // Entra ID center
+  svg.appendChild(el('rect',{x:400,y:40,width:400,height:300,rx:16,fill:'#2d1b4e22',stroke:'#a78bfa','stroke-width':2}));
+  svg.appendChild(txt(600,68,'🔐 Microsoft Entra ID','#a78bfa',16,'700'));
+  svg.appendChild(txt(600,88,'Primary Identity Provider · SAML 2.0 / OIDC','#64748b',10));
+
+  svg.appendChild(card(420,105,170,70,'gIdP','#a78bfa','📱','App Registration','Jenkins-Azure · SAML 2.0',
+    'Azure Jenkins App',['• SAML 2.0 app registration','• ACS URL: jenkins-az.../saml2','• Entity ID configured','• User attribute mapping']));
+  svg.appendChild(card(610,105,170,70,'gIdP','#34d399','📱','App Registration','Jenkins-GCP · SAML 2.0',
+    'GCP Jenkins App',['• SAML 2.0 app registration','• ACS URL: jenkins-gcp.../saml2','• Entity ID configured','• User attribute mapping']));
+
+  svg.appendChild(card(420,195,170,60,'gIdP','#f59e0b','👥','User Groups','jenkins-admins · jenkins-devs',
+    'Entra ID Groups',['• jenkins-admins → Admin role','• jenkins-devs → Developer role','• Mapped via SAML attributes','• Same groups for both clouds']));
+  svg.appendChild(card(610,195,170,60,'gIdP','#f59e0b','🔑','Conditional Access','MFA · Device compliance',
+    'Conditional Access',['• MFA required for Jenkins','• Device compliance check','• Location-based policies','• Session controls']));
+
+  svg.appendChild(card(420,275,360,50,'gIdP','#34d399','🔗','Workload Identity Federation','Azure AD → GCP (Already Configured)',
+    'WIF Federation',['• Azure AD as OIDC provider in GCP','• No service account keys needed','• Token exchange: Azure JWT → GCP token','• Already configured ✅']));
+
+  // User
+  svg.appendChild(card(30,300,160,70,'gDev','#61dafb','👤','User / Developer','Laptop + Browser',
+    'End User',['• Connects via Firezone VPN','• Browses jenkins-az or jenkins-gcp','• Redirected to Entra ID login','• Single login for both clouds']));
+
+  // Jenkins Azure
+  svg.appendChild(el('rect',{x:30,y:480,width:280,height:200,rx:12,fill:'#0d1b2e',stroke:'#3b82f6','stroke-width':1.5}));
+  svg.appendChild(txt(170,504,'⚙ Jenkins (Azure)','#3b82f6',13,'700'));
+  svg.appendChild(txt(170,522,'jenkins-az.internal.company','#60a5fa',9));
+  svg.appendChild(card(45,535,250,50,'gFZ','#3b82f6','🔌','SAML Plugin','Configured with Entra ID metadata',
+    'Jenkins SAML Plugin',['• SAML 2.0 plugin installed','• IdP metadata from Entra ID','• Attribute: email → username','• Group mapping configured']));
+  svg.appendChild(card(45,600,250,50,'gJenkins','#a78bfa','🛡','Access Control','Role-based via SAML groups',
+    'Jenkins RBAC',['• Admin: jenkins-admins group','• Developer: jenkins-devs group','• Read-only: jenkins-viewers','• Matrix-based security']));
+
+  // Jenkins GCP
+  svg.appendChild(el('rect',{x:890,y:480,width:280,height:200,rx:12,fill:'#0d2e1a',stroke:'#34d399','stroke-width':1.5}));
+  svg.appendChild(txt(1030,504,'⚙ Jenkins (GCP)','#34d399',13,'700'));
+  svg.appendChild(txt(1030,522,'jenkins-gcp.internal.company','#6ee7b7',9));
+  svg.appendChild(card(905,535,250,50,'gFZ','#34d399','🔌','SAML Plugin','Configured with Entra ID metadata',
+    'Jenkins SAML Plugin',['• SAML 2.0 plugin installed','• Same IdP metadata from Entra ID','• Attribute: email → username','• Group mapping configured']));
+  svg.appendChild(card(905,600,250,50,'gJenkins','#a78bfa','🛡','Access Control','Role-based via SAML groups',
+    'Jenkins RBAC',['• Same groups as Azure Jenkins','• Admin: jenkins-admins group','• Developer: jenkins-devs group','• Consistent RBAC across clouds']));
+
+  // Firezone portals
+  svg.appendChild(card(330,480,200,70,'gFZ','#f59e0b','🔒','Firezone Portal','app.firezone.dev · SSO',
+    'Firezone Portal',['• Users authenticate via Entra ID','• OIDC integration with Entra ID','• VPN access controlled by groups','• Audit logs for all connections']));
+
+  svg.appendChild(card(670,480,200,70,'gFZ','#f59e0b','🔒','Firezone Portal','Same portal · Multi-site',
+    'Firezone Multi-Site',['• Azure site: jenkins-az subnet','• GCP site: jenkins-gcp subnet','• User connects once, reaches both','• WireGuard split tunneling']));
+
+  // Flow arrows with labels
+  svg.appendChild(line(110,370,110,480,'#61dafb','arr',true,'1. Browse'));
+  svg.appendChild(curve('M 190 335 Q 600 380 600 340','#61dafb','arr',true));
+  svg.appendChild(txt(400,368,'2. SAML redirect','#61dafb',9,'600'));
+  svg.appendChild(curve('M 600 105 Q 170 80 170 480','#a78bfa','arrP',true));
+  svg.appendChild(txt(280,60,'3. SAML assertion','#a78bfa',9,'600'));
+  svg.appendChild(curve('M 800 105 Q 1030 80 1030 480','#34d399','arrG',true));
+  svg.appendChild(txt(960,60,'3. SAML assertion','#34d399',9,'600'));
+  svg.appendChild(line(430,550,330,550,'#f59e0b','arrO',true,'VPN tunnel'));
+  svg.appendChild(line(870,550,670,550,'#f59e0b','arrO',true,'VPN tunnel'));
+
+  // Same identity badge
+  svg.appendChild(el('rect',{x:430,y:660,width:340,height:30,rx:15,fill:'#61dafb22',stroke:'#61dafb','stroke-width':1}));
+  svg.appendChild(txt(600,675,'✅ Same user identity works on BOTH Jenkins instances','#61dafb',10,'600'));
+}
+
+// ─── VPN FLOW TAB ─────────────────────────────────────────────────────────────
+function drawVPN() {
+  document.getElementById('legend').innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:#61dafb"></div>WireGuard Tunnel</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>GCP Path</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Azure Path</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Blocked (No VPN)</div>
+  `;
+
+  // User laptop
+  svg.appendChild(el('rect',{x:30,y:290,width:160,height:140,rx:12,fill:'#1e293b',stroke:'#61dafb','stroke-width':2}));
+  svg.appendChild(txt(110,318,'💻 User Laptop','#61dafb',13,'700'));
+  svg.appendChild(card(45,330,130,40,'gDev','#61dafb','📱','Firezone Client','WireGuard active','Firezone Client',['• WireGuard VPN client','• Connects to Firezone portal','• Split tunnel routing','• DNS override for .internal']));
+  svg.appendChild(card(45,385,130,35,'gDev','#a78bfa','🌐','Browser','jenkins-*.internal.company','Browser',['• Accesses Jenkins via private DNS','• Redirected to Entra ID for SSO','• Not reachable without VPN']));
+
+  // Firezone control plane
+  svg.appendChild(el('rect',{x:450,y:40,width:300,height:100,rx:12,fill:'#1a1f2e',stroke:'#f59e0b','stroke-width':1.5}));
+  svg.appendChild(txt(600,68,'☁ Firezone Control Plane','#f59e0b',13,'700'));
+  svg.appendChild(txt(600,88,'api.firezone.dev · Manages gateways','#64748b',10));
+  svg.appendChild(txt(600,105,'Entra ID SSO · Policy enforcement · Audit logs','#94a3b8',9));
+
+  // Azure gateway
+  svg.appendChild(el('rect',{x:200,y:200,width:220,height:160,rx:12,fill:'#0d1b2e',stroke:'#3b82f6','stroke-width':1.5}));
+  svg.appendChild(txt(310,224,'🔒 Firezone GW (Azure)','#3b82f6',12,'700'));
+  svg.appendChild(txt(310,242,'20.x.x.x · East US','#60a5fa',9));
+  svg.appendChild(card(215,255,190,40,'gFZ','#3b82f6','📡','WireGuard','Port 51820/UDP · Encrypted','WireGuard',['• UDP port 51820','• Encrypted tunnel','• Low latency','• Automatic reconnect']));
+  svg.appendChild(card(215,308,190,40,'gFZ','#60a5fa','🔀','Routes','192.168.0.0/24 → Jenkins','Routing',['• Routes 192.168.0.0/24','• DNS: jenkins-az.internal','• NAT for private subnet']));
+
+  // GCP gateway
+  svg.appendChild(el('rect',{x:780,y:200,width:220,height:160,rx:12,fill:'#0d2e1a',stroke:'#34d399','stroke-width':1.5}));
+  svg.appendChild(txt(890,224,'🔒 Firezone GW (GCP)','#34d399',12,'700'));
+  svg.appendChild(txt(890,242,'34.x.x.x · us-central1','#6ee7b7',9));
+  svg.appendChild(card(795,255,190,40,'gFZ','#34d399','📡','WireGuard','Port 51820/UDP · Encrypted','WireGuard',['• UDP port 51820','• Encrypted tunnel','• Low latency','• Automatic reconnect']));
+  svg.appendChild(card(795,308,190,40,'gFZ','#6ee7b7','🔀','Routes','10.0.0.0/24 → Jenkins','Routing',['• Routes 10.0.0.0/24','• DNS: jenkins-gcp.internal','• NAT for private subnet']));
+
+  // Jenkins VMs
+  svg.appendChild(el('rect',{x:200,y:480,width:220,height:120,rx:12,fill:'#1e1b4b',stroke:'#a78bfa','stroke-width':1.5}));
+  svg.appendChild(txt(310,504,'⚙ Jenkins (Azure)','#a78bfa',12,'700'));
+  svg.appendChild(txt(310,522,'192.168.0.10 · Private only','#c4b5fd',9));
+  svg.appendChild(txt(310,540,'Port 8080 · SAML SSO','#94a3b8',9));
+  svg.appendChild(el('rect',{x:215,y:555,width:190,height:30,rx:6,fill:'#f8717115',stroke:'#f87171','stroke-width':.8}));
+  svg.appendChild(txt(310,570,'❌ NOT reachable without VPN','#f87171',9,'600'));
+
+  svg.appendChild(el('rect',{x:780,y:480,width:220,height:120,rx:12,fill:'#1e1b4b',stroke:'#a78bfa','stroke-width':1.5}));
+  svg.appendChild(txt(890,504,'⚙ Jenkins (GCP)','#a78bfa',12,'700'));
+  svg.appendChild(txt(890,522,'10.0.0.10 · Private only','#c4b5fd',9));
+  svg.appendChild(txt(890,540,'Port 8080 · SAML SSO','#94a3b8',9));
+  svg.appendChild(el('rect',{x:795,y:555,width:190,height:30,rx:6,fill:'#f8717115',stroke:'#f87171','stroke-width':.8}));
+  svg.appendChild(txt(890,570,'❌ NOT reachable without VPN','#f87171',9,'600'));
+
+  // Arrows
+  svg.appendChild(curve('M 190 310 Q 310 250 310 360','#3b82f6','arr',true));
+  svg.appendChild(txt(220,270,'WireGuard','#3b82f6',9,'600'));
+  svg.appendChild(curve('M 190 330 Q 890 250 890 360','#34d399','arrG',true));
+  svg.appendChild(txt(600,220,'WireGuard','#34d399',9,'600'));
+  svg.appendChild(line(310,360,310,480,'#3b82f6','arr',true,'private'));
+  svg.appendChild(line(890,360,890,480,'#34d399','arrG',true,'private'));
+  svg.appendChild(line(310,90,310,200,'#f59e0b','arrO',true,'control'));
+  svg.appendChild(line(890,90,890,200,'#f59e0b','arrO',true,'control'));
+
+  // DNS resolution box
+  svg.appendChild(el('rect',{x:430,y:480,width:340,height:120,rx:12,fill:'#1a0f30',stroke:'#a78bfa','stroke-width':1.5}));
+  svg.appendChild(txt(600,504,'🌐 DNS Resolution (via VPN)','#a78bfa',12,'700'));
+  [['jenkins-az.internal.company','→ 192.168.0.10 (Azure)','#3b82f6'],
+   ['jenkins-gcp.internal.company','→ 10.0.0.10 (GCP)','#34d399'],
+   ['Without VPN: NXDOMAIN','(private zones not exposed)','#f87171']].forEach(([q,a,col],i)=>{
+    svg.appendChild(txt(445,528+i*24,q,col,9,'600','start'));
+    svg.appendChild(txt(445,540+i*24,a,'#94a3b8',9,'400','start'));
+  });
+
+  svg.appendChild(line(190,420,430,540,'#a78bfa','arrP',true,'DNS query'));
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>
+    t.classList.toggle('active',['infra','cicd','sso','vpn'][i]===tab));
+  clearSVG();
+  if(tab==='infra') drawInfra();
+  if(tab==='cicd') drawCICD();
+  if(tab==='sso') drawSSO();
+  if(tab==='vpn') drawVPN();
+}
+
+clearSVG();
+drawInfra();
+</script>
+</body>
+</html>

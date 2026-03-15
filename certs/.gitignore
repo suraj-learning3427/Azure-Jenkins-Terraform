@@ -1,0 +1,12 @@
+# NEVER commit private keys or PFX files
+*.key.pem
+*.pfx
+*.p12
+root-ca/
+intermediate-ca/
+leaf/
+ca-bundle.pem
+
+# Safe to commit (public certs only if needed)
+# *.cert.pem
+# *.chain.pem

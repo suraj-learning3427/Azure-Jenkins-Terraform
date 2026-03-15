@@ -1,0 +1,25 @@
+# Terraform local state — never commit, state lives in Terraform Cloud
+terraform.tfstate
+terraform.tfstate.backup
+tfplan
+.terraform/
+.terraform.lock.hcl
+
+# tfvars may contain secrets — use TFC variables instead
+terraform.tfvars
+
+# Certificate private keys — never commit
+certs/root-ca/
+certs/intermediate-ca/
+certs/leaf/
+certs/ca-bundle.pem
+*.key.pem
+*.pfx
+
+# SSH private key
+azure_jenkins_key
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/settings.json

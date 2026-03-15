@@ -83,6 +83,12 @@ variable "dns_zone_name" {
   description = "Name of the private DNS zone (equivalent to GCP private DNS zone)"
 }
 
+variable "firezone_client_cidr" {
+  type        = string
+  default     = "100.64.0.0/10"
+  description = "CIDR range assigned to Firezone VPN clients — used to allow DNS + Jenkins access through tunnel"
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}

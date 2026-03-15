@@ -3,6 +3,16 @@
 
 terraform {
   required_version = ">= 1.0"
+
+  # Terraform Cloud remote backend — state stored here, plans/applies run here
+  cloud {
+    organization = "your-tfc-org-name"   # ← replace with your TFC org name
+
+    workspaces {
+      name = "jenkins-azure"             # ← must match workspace name in TFC
+    }
+  }
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -32,15 +42,17 @@ module "azure_core_infrastructure" {
   source = "./azure-core-infrastructure"
 
   name_prefix              = var.name_prefix
-  location                = var.location
-  spoke_address_space     = var.spoke_address_space
-  vpn_subnet_cidr         = var.vpn_subnet_cidr
-  enable_hub_peering      = var.enable_hub_peering
-  hub_vnet_id             = module.azure_networking_global.hub_virtual_network.id
-  hub_resource_group_name = module.azure_networking_global.resource_group.name
-  hub_vnet_name           = module.azure_networking_global.hub_virtual_network.name
-  hub_has_gateway         = var.enable_vpn_gateway
-  tags                    = var.tags
+  location                 = var.location
+  spoke_address_space      = var.spoke_address_space
+  vpn_subnet_cidr          = var.vpn_subnet_cidr
+  enable_hub_peering       = var.enable_hub_peering
+  hub_vnet_id              = module.azure_networking_global.hub_virtual_network.id
+  hub_resource_group_name  = module.azure_networking_global.resource_group.name
+  hub_vnet_name            = module.azure_networking_global.hub_virtual_network.name
+  hub_has_gateway          = var.enable_vpn_gateway
+  dns_zone_name            = var.dns_zone_name
+  firezone_client_cidr     = var.firezone_client_cidr
+  tags                     = var.tags
 
   depends_on = [module.azure_networking_global]
 }
@@ -67,6 +79,7 @@ module "azure_core_infrastructure_secondary" {
   name_prefix                  = var.name_prefix
   location                    = var.secondary_region
   spoke_address_space         = var.secondary_spoke_address_space
+  jenkins_subnet_cidr         = var.secondary_jenkins_subnet_cidr
   vpn_subnet_cidr             = var.secondary_vpn_subnet_cidr
   enable_primary_peering      = true
   primary_vnet_id             = module.azure_core_infrastructure.spoke_virtual_network.id
@@ -95,6 +108,7 @@ module "azure_firezone_multi_region" {
   secondary_subnet_name         = module.azure_core_infrastructure_secondary[0].vpn_subnet.name
   vm_size                       = "Standard_B2s"
   ssh_public_key                = var.ssh_public_key
+  firezone_id                   = var.firezone_id
   firezone_token                = var.firezone_token
   tags                          = var.tags
 
@@ -102,6 +116,17 @@ module "azure_firezone_multi_region" {
     module.azure_core_infrastructure,
     module.azure_core_infrastructure_secondary
   ]
+}
+
+# Private DNS A Record for Jenkins VM
+resource "azurerm_private_dns_a_record" "jenkins" {
+  name                = "jenkins-az"
+  zone_name           = module.azure_core_infrastructure.private_dns_zone.name
+  resource_group_name = module.azure_core_infrastructure.resource_group.name
+  ttl                 = 300
+  records             = [module.azure_jenkins_vm.jenkins_vm.private_ip_address]
+
+  depends_on = [module.azure_jenkins_vm]
 }
 
 # Application Gateway Module - COMMENTED OUT FOR STEP-BY-STEP DEPLOYMENT

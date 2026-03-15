@@ -51,6 +51,12 @@ variable "firezone_token" {
   sensitive   = true
 }
 
+variable "firezone_id" {
+  type        = string
+  description = "Firezone gateway ID"
+  sensitive   = true
+}
+
 variable "log_level" {
   type        = string
   default     = "info"

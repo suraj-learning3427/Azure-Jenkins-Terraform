@@ -101,6 +101,7 @@ resource "azurerm_linux_virtual_machine" "firezone_gateway" {
   # Custom data for Firezone installation
   custom_data = base64encode(templatefile("${path.module}/templates/firezone-startup.sh", {
     firezone_token = var.firezone_token
+    firezone_id    = var.firezone_id
     log_level      = var.log_level
   }))
 }

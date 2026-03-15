@@ -1,5 +1,5 @@
 #!/bin/bash
-# Jenkins Installation Script for Azure VM (Ubuntu 22.04)
+# Jenkins Installation Script for GCP VM (Ubuntu 22.04)
 set -e
 
 exec > >(tee -a /var/log/jenkins-startup.log)
@@ -22,14 +22,8 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-if [ ! -e "$DISK_DEVICE" ]; then
-    echo "WARNING: Data disk not found at $DISK_DEVICE, using /dev/sdc fallback"
-    DISK_DEVICE="/dev/sdc"
-fi
-
-# Format and mount data disk
+# Format and mount
 if ! blkid "$DISK_DEVICE" 2>/dev/null; then
-    echo "Formatting data disk..."
     mkfs.ext4 -F "$DISK_DEVICE"
 fi
 
@@ -38,9 +32,8 @@ mount "$DISK_DEVICE" "$MOUNT_POINT"
 
 UUID=$(blkid -s UUID -o value "$DISK_DEVICE")
 grep -q "$UUID" /etc/fstab || echo "UUID=$UUID $MOUNT_POINT ext4 defaults,nofail 0 2" >> /etc/fstab
-echo "Data disk mounted at $MOUNT_POINT"
 
-# Install Java + Jenkins (Ubuntu/Debian)
+# Install Java + Jenkins
 apt-get update -y
 apt-get install -y wget curl fontconfig openjdk-17-jre
 
@@ -65,14 +58,13 @@ systemctl daemon-reload
 systemctl enable jenkins
 systemctl start jenkins
 
-# Wait for Jenkins web interface
+# Wait for Jenkins
 echo "Waiting for Jenkins to start..."
 for i in $(seq 1 60); do
     if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$JENKINS_PORT" | grep -qE "200|403"; then
-        echo "Jenkins web interface is ready"
+        echo "Jenkins is ready"
         break
     fi
-    echo "Waiting... ($i/60)"
     sleep 5
 done
 
@@ -81,6 +73,5 @@ if [ -f "$ADMIN_PASS_FILE" ]; then
     echo "Initial admin password: $(cat $ADMIN_PASS_FILE)"
 fi
 
-echo "Jenkins setup complete!"
-echo "URL: http://localhost:$JENKINS_PORT"
+echo "Jenkins setup complete. Port: $JENKINS_PORT"
 echo "Timestamp: $(date)"

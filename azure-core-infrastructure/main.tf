@@ -12,11 +12,14 @@ resource "azurerm_resource_group" "core_infrastructure" {
 }
 
 # Spoke Virtual Network (equivalent to vpc-spoke)
+# dns_servers explicitly set to Azure's internal resolver so Firezone clients
+# querying through the tunnel get private DNS resolution via 168.63.129.16
 resource "azurerm_virtual_network" "vpc_spoke" {
   name                = "${var.name_prefix}vpc-spoke"
   address_space       = [var.spoke_address_space]
   location            = azurerm_resource_group.core_infrastructure.location
   resource_group_name = azurerm_resource_group.core_infrastructure.name
+  dns_servers         = ["168.63.129.16"]
   tags                = var.tags
 }
 
@@ -102,12 +105,93 @@ resource "azurerm_network_security_group" "jenkins_nsg" {
     source_address_prefix      = "AzureLoadBalancer"
     destination_address_prefix = "*"
   }
+
+  # Allow Jenkins access from Firezone VPN clients
+  # Firezone assigns clients IPs in the WireGuard tunnel range
+  security_rule {
+    name                       = "AllowFirezoneVPNClients"
+    priority                   = 1400
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["8080", "8443"]
+    source_address_prefix      = var.firezone_client_cidr
+    destination_address_prefix = "*"
+  }
 }
 
 # Associate NSG with Jenkins subnet
 resource "azurerm_subnet_network_security_group_association" "jenkins_subnet_nsg" {
   subnet_id                 = azurerm_subnet.subnet_jenkins.id
   network_security_group_id = azurerm_network_security_group.jenkins_nsg.id
+}
+
+# Network Security Group for VPN/Firezone subnet
+# Allows WireGuard + DNS forwarding to Azure internal resolver (168.63.129.16)
+resource "azurerm_network_security_group" "vpn_nsg" {
+  name                = "${var.name_prefix}vpn-nsg"
+  location            = azurerm_resource_group.core_infrastructure.location
+  resource_group_name = azurerm_resource_group.core_infrastructure.name
+  tags                = var.tags
+
+  # WireGuard inbound from internet
+  security_rule {
+    name                       = "AllowWireGuard"
+    priority                   = 1000
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Udp"
+    source_port_range          = "*"
+    destination_port_range     = "51820"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  # SSH for management
+  security_rule {
+    name                       = "AllowSSH"
+    priority                   = 1100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
+
+  # Health check port for load balancer
+  security_rule {
+    name                       = "AllowHealthCheck"
+    priority                   = 1200
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "8080"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
+  # Allow DNS queries from VPN clients through the gateway to 168.63.129.16
+  # Firezone gateway receives DNS on port 53 and forwards to Azure resolver
+  security_rule {
+    name                       = "AllowDNSFromVPNClients"
+    priority                   = 1300
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "53"
+    source_address_prefix      = var.firezone_client_cidr
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "vpn_subnet_nsg" {
+  subnet_id                 = azurerm_subnet.subnet_vpn.id
+  network_security_group_id = azurerm_network_security_group.vpn_nsg.id
 }
 
 # Network Security Group for Application Gateway

@@ -68,7 +68,7 @@ systemctl start jenkins
 # Wait for Jenkins web interface
 echo "Waiting for Jenkins to start..."
 for i in $(seq 1 60); do
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$JENKINS_PORT" | grep -qE "200|403"; then
+    if curl -s -o /dev/null -w "%%{http_code}" "http://localhost:$JENKINS_PORT" | grep -qE "200|403"; then
         echo "Jenkins web interface is ready"
         break
     fi

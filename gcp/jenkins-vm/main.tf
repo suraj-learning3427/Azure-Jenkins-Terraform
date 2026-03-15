@@ -7,11 +7,6 @@ terraform {
   }
 }
 
-provider "google" {
-  project = var.project_id
-  region  = var.region
-}
-
 # ─── SERVICE ACCOUNT ──────────────────────────────────────────────────────────
 resource "google_service_account" "jenkins_sa" {
   account_id   = "${var.name_prefix}jenkins-vm-sa"

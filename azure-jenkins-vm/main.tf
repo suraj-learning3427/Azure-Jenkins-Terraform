@@ -116,3 +116,22 @@ resource "azurerm_virtual_machine_data_disk_attachment" "jenkins_data_disk_attac
   lun                = "0"
   caching            = "ReadWrite"
 }
+
+# HTTPS setup via VM extension — runs after Key Vault is ready
+resource "azurerm_virtual_machine_extension" "jenkins_https_setup" {
+  count                = var.kv_name != "" ? 1 : 0
+  name                 = "jenkins-https-setup"
+  virtual_machine_id   = azurerm_linux_virtual_machine.jenkins_vm.id
+  publisher            = "Microsoft.Azure.Extensions"
+  type                 = "CustomScript"
+  type_handler_version = "2.1"
+
+  settings = jsonencode({
+    script = base64encode(templatefile("${path.module}/templates/jenkins-https-setup.sh", {
+      kv_name  = var.kv_name
+      cert_dir = "/etc/jenkins/certs"
+    }))
+  })
+
+  tags = var.tags
+}

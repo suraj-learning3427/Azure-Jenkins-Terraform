@@ -18,12 +18,18 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
 provider "azurerm" {
   features {}
 }
+
+data "azurerm_client_config" "current" {}
 
 # Hub Network Module
 module "azure_networking_global" {
@@ -66,9 +72,10 @@ module "azure_jenkins_vm" {
   vnet_name          = module.azure_core_infrastructure.spoke_virtual_network.name
   ssh_public_key     = var.ssh_public_key
   vm_size            = var.jenkins_vm_size
+  kv_name            = module.certs_keyvault.key_vault_name
   tags               = var.tags
 
-  depends_on = [module.azure_core_infrastructure]
+  depends_on = [module.azure_core_infrastructure, module.certs_keyvault]
 }
 
 # Secondary Region Infrastructure for Firezone
@@ -116,6 +123,32 @@ module "azure_firezone_multi_region" {
     module.azure_core_infrastructure,
     module.azure_core_infrastructure_secondary
   ]
+}
+
+# Key Vault for Jenkins TLS Certificates
+# Note: Created before Jenkins VM so the KV name can be passed to the VM extension.
+# The Jenkins VM managed identity access policy is added after VM creation.
+module "certs_keyvault" {
+  source = "./azure/certs-keyvault"
+
+  resource_group_name              = module.azure_core_infrastructure.resource_group.name
+  jenkins_vm_identity_principal_id = ""
+  pfx_password                     = var.pfx_password
+  tags                             = var.tags
+
+  depends_on = [module.azure_core_infrastructure]
+}
+
+# Grant Jenkins VM managed identity access to Key Vault (added after VM is created)
+resource "azurerm_key_vault_access_policy" "jenkins_vm_kv_access" {
+  key_vault_id = module.certs_keyvault.key_vault_id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = module.azure_jenkins_vm.jenkins_identity.principal_id
+
+  secret_permissions      = ["Get", "List"]
+  certificate_permissions = ["Get", "List"]
+
+  depends_on = [module.azure_jenkins_vm, module.certs_keyvault]
 }
 
 # Private DNS A Record for Jenkins VM

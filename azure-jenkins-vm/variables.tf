@@ -85,6 +85,12 @@ variable "jenkins_port" {
   description = "Port for Jenkins web interface"
 }
 
+variable "kv_name" {
+  type        = string
+  default     = ""
+  description = "Azure Key Vault name for pulling TLS certificates"
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}

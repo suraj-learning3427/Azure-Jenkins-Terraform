@@ -30,6 +30,15 @@ output "secondary_infrastructure" {
   value       = var.enable_firezone_multi_region ? module.azure_core_infrastructure_secondary[0] : null
 }
 
+output "key_vault" {
+  description = "Key Vault information for Jenkins certificates"
+  value = {
+    name = module.certs_keyvault.key_vault_name
+    uri  = module.certs_keyvault.key_vault_uri
+    id   = module.certs_keyvault.key_vault_id
+  }
+}
+
 # output "application_gateway" {
 #   description = "Application Gateway information"
 #   value       = module.azure_jenkins_appgw

@@ -16,7 +16,7 @@ jobs:
     env:
       TF_CLOUD_ORGANIZATION: ${{ secrets.TF_CLOUD_ORGANIZATION }}
       TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      TF_WORKSPACE: jenkins-azure
+      TF_WORKSPACE: Azure-Jenkins-Terraform
 
     steps:
       - name: Checkout code

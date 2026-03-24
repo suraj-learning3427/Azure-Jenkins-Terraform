@@ -11,14 +11,6 @@ terraform {
   }
 }
 
-provider "azurerm" {
-  features {
-    key_vault {
-      purge_soft_delete_on_destroy = true
-    }
-  }
-}
-
 data "azurerm_client_config" "current" {}
 
 data "azurerm_resource_group" "rg" {
@@ -42,17 +34,21 @@ resource "azurerm_key_vault" "jenkins_kv" {
   purge_protection_enabled   = false
   tags                       = var.tags
 
+  # Terraform deployer access
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
     object_id = data.azurerm_client_config.current.object_id
 
-    certificate_permissions = ["Backup", "Create", "Delete", "DeleteIssuers", "Get", "GetIssuers", "Import", "List", "ListIssuers", "ManageContacts", "ManageIssuers", "Purge", "Recover", "Restore", "SetIssuers", "Update"]
+    certificate_permissions = ["Backup", "Create", "Delete", "DeleteIssuers", "Get", "GetIssuers",
+      "Import", "List", "ListIssuers", "ManageContacts", "ManageIssuers", "Purge", "Recover",
+      "Restore", "SetIssuers", "Update"]
     secret_permissions      = ["Backup", "Delete", "Get", "List", "Purge", "Recover", "Restore", "Set"]
-    key_permissions         = ["Backup", "Create", "Decrypt", "Delete", "Encrypt", "Get", "Import", "List", "Purge", "Recover", "Restore", "Sign", "UnwrapKey", "Update", "Verify", "WrapKey"]
+    key_permissions         = ["Backup", "Create", "Decrypt", "Delete", "Encrypt", "Get", "Import",
+      "List", "Purge", "Recover", "Restore", "Sign", "UnwrapKey", "Update", "Verify", "WrapKey"]
   }
 }
 
-# ─── ROOT CA CERT (stored as secret for client distribution) ──────────────────
+# ─── ROOT CA CERT ─────────────────────────────────────────────────────────────
 resource "azurerm_key_vault_secret" "root_ca_cert" {
   name         = "root-ca-cert"
   value        = file("${path.root}/../../certs/root-ca/root-ca.cert.pem")
@@ -70,11 +66,11 @@ resource "azurerm_key_vault_secret" "intermediate_ca_cert" {
   tags         = merge(var.tags, { cert-type = "intermediate-ca" })
 }
 
-# ─── AZURE JENKINS LEAF CERT (PFX for App Gateway / Jenkins HTTPS) ────────────
+# ─── AZURE JENKINS LEAF CERT (PFX) ────────────────────────────────────────────
 resource "azurerm_key_vault_certificate" "jenkins_az_cert" {
   name         = "jenkins-az-cert"
   key_vault_id = azurerm_key_vault.jenkins_kv.id
-  tags         = merge(var.tags, { cert-type = "leaf", cloud = "azure" })
+  tags         = merge(var.tags, { cert-type = "leaf" })
 
   certificate {
     contents = filebase64("${path.root}/../../certs/leaf/jenkins-az.pfx")
@@ -97,25 +93,27 @@ resource "azurerm_key_vault_certificate" "jenkins_az_cert" {
   }
 }
 
-# ─── AZURE JENKINS PRIVATE KEY (PEM for Jenkins direct HTTPS) ─────────────────
+# ─── AZURE JENKINS PRIVATE KEY (PEM) ──────────────────────────────────────────
 resource "azurerm_key_vault_secret" "jenkins_az_key" {
   name         = "jenkins-az-key"
   value        = file("${path.root}/../../certs/leaf/jenkins-az.key.pem")
   key_vault_id = azurerm_key_vault.jenkins_kv.id
   content_type = "application/x-pem-file"
-  tags         = merge(var.tags, { cert-type = "leaf-key", cloud = "azure" })
+  tags         = merge(var.tags, { cert-type = "leaf-key" })
 }
 
+# ─── AZURE JENKINS FULL CHAIN (PEM) ───────────────────────────────────────────
 resource "azurerm_key_vault_secret" "jenkins_az_chain" {
   name         = "jenkins-az-chain"
   value        = file("${path.root}/../../certs/leaf/jenkins-az.chain.pem")
   key_vault_id = azurerm_key_vault.jenkins_kv.id
   content_type = "application/x-pem-file"
-  tags         = merge(var.tags, { cert-type = "leaf-chain", cloud = "azure" })
+  tags         = merge(var.tags, { cert-type = "leaf-chain" })
 }
 
-# ─── JENKINS VM IDENTITY ACCESS TO KEY VAULT ──────────────────────────────────
+# ─── JENKINS VM MANAGED IDENTITY ACCESS ───────────────────────────────────────
 resource "azurerm_key_vault_access_policy" "jenkins_vm_access" {
+  count        = var.jenkins_vm_identity_principal_id != "" ? 1 : 0
   key_vault_id = azurerm_key_vault.jenkins_kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
   object_id    = var.jenkins_vm_identity_principal_id
